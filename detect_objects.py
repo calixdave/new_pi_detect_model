@@ -7,12 +7,7 @@ SCAN_DIR = "scan_images"
 DEBUG_DIR = "debug_objects"
 HEADINGS = ["front", "right", "back", "left"]
 
-ROI_TOP_FRAC = 0.55
-ROI_BOT_FRAC = 0.95
-
-SLOT_PAD_X_FRAC = 0.03
-SLOT_PAD_Y_FRAC = 0.06
-
+# Same heading mapping as your color script
 HEADING_TO_POSITIONS = {
     "front": [(-1, +1), (0, +1), (+1, +1)],
     "right": [(+1, +1), (+1, 0), (+1, -1)],
@@ -20,17 +15,23 @@ HEADING_TO_POSITIONS = {
     "left":  [(-1, -1), (-1, 0), (-1, +1)],
 }
 
-# Very loose orange detection to make it work first
-ORANGE_H_MIN = 0
-ORANGE_H_MAX = 35
-ORANGE_S_MIN = 60
-ORANGE_V_MIN = 60
+# Use same broad band, but later focus lower inside each slot
+ROI_TOP_FRAC = 0.55
+ROI_BOT_FRAC = 0.95
 
-ORANGE_MIN_AREA_FRAC = 0.015
-ORANGE_MAX_AREA_FRAC = 0.80
+# Make slots tighter to reduce spill from neighbors
+SLOT_PAD_X_FRAC = 0.08
+SLOT_PAD_Y_FRAC = 0.10
 
-OBSTACLE_MIN_SCORE = 0.06
-EMPTY_SCORE_MAX = 0.03
+# Orange range (moderate, not too loose)
+ORANGE_H_MIN = 4
+ORANGE_H_MAX = 28
+ORANGE_S_MIN = 90
+ORANGE_V_MIN = 80
+
+# Final decision
+OBSTACLE_SCORE_THRESH = 0.22
+EMPTY_SCORE_MAX = 0.08
 
 
 def get_three_slot_rois(img):
@@ -73,10 +74,28 @@ def pretty_print_matrix(mat):
 
 def squareish_score(cnt):
     x, y, w, h = cv2.boundingRect(cnt)
-    if h <= 0:
+    if h <= 0 or w <= 0:
         return 0.0
     aspect = float(w) / float(h)
     return max(0.0, 1.0 - abs(aspect - 1.0))
+
+
+def center_proximity_score(rect, tile_shape):
+    x, y, w, h = rect
+    th, tw = tile_shape[:2]
+
+    cx = x + w / 2.0
+    cy = y + h / 2.0
+
+    # prefer lower-middle of the slot
+    target_x = tw / 2.0
+    target_y = th * 0.68
+
+    dx = abs(cx - target_x) / max(1.0, tw / 2.0)
+    dy = abs(cy - target_y) / max(1.0, th / 2.0)
+
+    score = 1.0 - min(1.0, 0.55 * dx + 0.45 * dy)
+    return max(0.0, score)
 
 
 def detect_orange_obstacle(tile):
@@ -86,6 +105,7 @@ def detect_orange_obstacle(tile):
     hsv = cv2.cvtColor(tile, cv2.COLOR_BGR2HSV)
     H, S, V = cv2.split(hsv)
 
+    # orange mask
     mask = (
         (H >= ORANGE_H_MIN) &
         (H <= ORANGE_H_MAX) &
@@ -105,41 +125,55 @@ def detect_orange_obstacle(tile):
     for cnt in contours:
         area = cv2.contourArea(cnt)
         area_frac = area / tile_area
-        if area_frac < ORANGE_MIN_AREA_FRAC or area_frac > ORANGE_MAX_AREA_FRAC:
+
+        # reject tiny noise and huge floods
+        if area_frac < 0.015 or area_frac > 0.45:
+            continue
+
+        rect = cv2.boundingRect(cnt)
+        x, y, ww, hh = rect
+        if ww < 10 or hh < 10:
             continue
 
         sq = squareish_score(cnt)
-        x, y, ww, hh = cv2.boundingRect(cnt)
+        if sq < 0.35:
+            continue
 
         roi_mask = mask[y:y+hh, x:x+ww]
         if roi_mask.size == 0:
             continue
 
         fill = float(np.mean(roi_mask > 0))
+        if fill < 0.35:
+            continue
 
+        center_score = center_proximity_score(rect, tile.shape)
+
+        # slightly favor lower-center and square candidates
         score = (
-            0.50 * area_frac +
-            0.25 * fill +
-            0.25 * sq
+            0.28 * area_frac +
+            0.22 * fill +
+            0.25 * sq +
+            0.25 * center_score
         )
 
         if score > best_score:
             best_score = score
-            best_rect = (x, y, ww, hh)
+            best_rect = rect
 
     return best_score, best_rect, mask
 
 
 def classify_slot_object(tile):
-    orange_score, orange_rect, orange_mask = detect_orange_obstacle(tile)
+    score, rect, orange_mask = detect_orange_obstacle(tile)
 
-    if orange_score >= OBSTACLE_MIN_SCORE:
-        return "obstacle", orange_score, "X", orange_rect, orange_mask
+    if score >= OBSTACLE_SCORE_THRESH:
+        return "obstacle", score, "X", rect, orange_mask
 
-    if orange_score <= EMPTY_SCORE_MAX:
-        return "empty", orange_score, "E", orange_rect, orange_mask
+    if score <= EMPTY_SCORE_MAX:
+        return "empty", score, "E", rect, orange_mask
 
-    return "unknown", orange_score, "?", orange_rect, orange_mask
+    return "unknown", score, "?", rect, orange_mask
 
 
 def draw_debug(tile, label, score, orange_rect):
@@ -150,6 +184,12 @@ def draw_debug(tile, label, score, orange_rect):
         cv2.rectangle(dbg, (x, y), (x + w, y + h), (0, 140, 255), 2)
         cv2.putText(dbg, "obs", (x, max(15, y - 5)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 140, 255), 2)
+
+    # draw preferred center zone
+    th, tw = tile.shape[:2]
+    cx = int(tw * 0.50)
+    cy = int(th * 0.68)
+    cv2.circle(dbg, (cx, cy), 4, (255, 255, 0), -1)
 
     cv2.putText(dbg, f"{label} {score:.3f}", (10, 20),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
