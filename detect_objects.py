@@ -2,56 +2,60 @@ import cv2
 import numpy as np
 import time
 
-# =========================================
+# =========================================================
 # CAMERA SETTINGS
-# =========================================
+# =========================================================
 CAM_INDEX = 0
 FRAME_W = 640
 FRAME_H = 480
 
-# =========================================
+# =========================================================
 # ROI / SLOT SETTINGS
-# same spirit as your grid program
-# =========================================
+# =========================================================
 ROI_TOP_FRAC = 0.62
 ROI_BOT_FRAC = 0.93
-
 SLOT_PAD_X_FRAC = 0.02
 SLOT_PAD_Y_FRAC = 0.06
 
-# =========================================
+# =========================================================
 # WHITE BOX DETECTION
-# =========================================
+# =========================================================
 WHITE_THRESH = 170
 MIN_WHITE_AREA = 900
 MIN_WHITE_FILL = 0.45
 
-# =========================================
-# BLACK-X TARGET DETECTION
-# =========================================
+# =========================================================
+# TARGET: white box + thick black X
+# =========================================================
 BLACK_THRESH = 85
 MIN_BLACK_DIAG_SCORE = 0.12
 MIN_BLACK_COMBINED = 0.28
 
-# =========================================
-# RED-X OBSTACLE DETECTION
-# tuned to be lightweight
-# =========================================
+# =========================================================
+# OBSTACLE: white box + thick red X
+# =========================================================
+RED_MIN_R = 120
+RED_MARGIN = 40
 MIN_RED_DIAG_SCORE = 0.10
 MIN_RED_COMBINED = 0.24
 
-# red mask rule:
-# pixel is "red enough" if R is high and clearly above G/B
-RED_MIN_R = 120
-RED_MARGIN = 40
-
 SHOW_DEBUG = True
 
-
-# state names
 EMPTY = "EMPTY"
-TARGET = "TARGET"      # white box + black X
-OBSTACLE = "OBSTACLE"  # white box + red X
+TARGET = "TARGET"
+OBSTACLE = "OBSTACLE"
+AGENT = "AGENT"
+
+HEADINGS = ["front", "right", "back", "left"]
+
+# Map 3 visible slots into local 3x3 around agent at center
+# Coordinates are (dx, dy), where center = (0,0)
+HEADING_TO_POSITIONS = {
+    "front": [(-1, +1), (0, +1), (+1, +1)],
+    "right": [(+1, +1), (+1, 0), (+1, -1)],
+    "back":  [(+1, -1), (0, -1), (-1, -1)],
+    "left":  [(-1, -1), (-1, 0), (-1, +1)],
+}
 
 
 def make_slot_boxes(w, h):
@@ -83,12 +87,8 @@ def diagonal_band_masks(h, w, band_frac=0.08):
     yy, xx = np.indices((h, w))
     band = max(2, int(min(h, w) * band_frac))
 
-    # main diagonal
     d1 = np.abs(yy - ((h - 1) / max(1, (w - 1))) * xx) <= band
-
-    # anti diagonal
     d2 = np.abs(yy - ((h - 1) - ((h - 1) / max(1, (w - 1))) * xx)) <= band
-
     return d1, d2
 
 
@@ -128,7 +128,7 @@ def get_white_candidates(bgr):
 
         candidates.append((x, y, w, h, white_fill))
 
-    return gray, white_mask, candidates
+    return candidates
 
 
 def inner_crop(arr, frac=0.12):
@@ -179,13 +179,7 @@ def red_x_scores(inner_bgr):
 
 
 def classify_marker_in_slot(slot_bgr):
-    """
-    Return:
-        state: EMPTY / TARGET / OBSTACLE
-        rect:  (x,y,w,h) inside slot, or None
-        info:  debug dictionary
-    """
-    gray, white_mask, candidates = get_white_candidates(slot_bgr)
+    candidates = get_white_candidates(slot_bgr)
 
     best_score = -1.0
     best_state = EMPTY
@@ -219,8 +213,6 @@ def classify_marker_in_slot(slot_bgr):
             red_combined >= MIN_RED_COMBINED
         )
 
-        # avoid confusion if both somehow respond
-        # choose stronger type
         state = EMPTY
         score = -1.0
 
@@ -241,11 +233,7 @@ def classify_marker_in_slot(slot_bgr):
             best_rect = (x, y, w, h)
             best_info = {
                 "white_fill": white_fill,
-                "black_d1": b1,
-                "black_d2": b2,
                 "black_combined": black_combined,
-                "red_d1": r1,
-                "red_d2": r2,
                 "red_combined": red_combined,
                 "score": score
             }
@@ -258,11 +246,90 @@ def state_to_char(state):
         return "T"
     if state == OBSTACLE:
         return "X"
+    if state == AGENT:
+        return "A"
     return "E"
 
 
-def draw_text(img, text, x, y, color):
-    cv2.putText(img, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2, cv2.LINE_AA)
+def blank_local_grid():
+    grid = {}
+    for dy in [-1, 0, 1]:
+        for dx in [-1, 0, 1]:
+            grid[(dx, dy)] = EMPTY
+    grid[(0, 0)] = AGENT
+    return grid
+
+
+def pretty_matrix(grid):
+    rows = []
+    for dy in [1, 0, -1]:
+        row = []
+        for dx in [-1, 0, 1]:
+            row.append(state_to_char(grid[(dx, dy)]))
+        rows.append(row)
+    return rows
+
+
+def print_matrix(grid):
+    mat = pretty_matrix(grid)
+    print("\nFinal 3x3 object matrix:")
+    for row in mat:
+        print(" ".join(row))
+
+
+def draw_text(img, text, x, y, color=(255, 255, 255), scale=0.55, thick=2):
+    cv2.putText(img, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, thick, cv2.LINE_AA)
+
+
+def color_for_state(state):
+    if state == TARGET:
+        return (0, 255, 0)
+    if state == OBSTACLE:
+        return (0, 0, 255)
+    if state == AGENT:
+        return (255, 255, 255)
+    return (180, 180, 180)
+
+
+def draw_grid_panel(img, grid, x0=10, y0=40, cell=40):
+    for row_i, dy in enumerate([1, 0, -1]):
+        for col_i, dx in enumerate([-1, 0, 1]):
+            x1 = x0 + col_i * cell
+            y1 = y0 + row_i * cell
+            x2 = x1 + cell
+            y2 = y1 + cell
+
+            state = grid[(dx, dy)]
+            cv2.rectangle(img, (x1, y1), (x2, y2), (255, 255, 255), 1)
+            ch = state_to_char(state)
+            color = color_for_state(state)
+            draw_text(img, ch, x1 + 12, y1 + 25, color, scale=0.7, thick=2)
+
+
+def detect_three_slots(frame):
+    h, w = frame.shape[:2]
+    slots = make_slot_boxes(w, h)
+
+    states = []
+    rects = []
+    infos = []
+
+    for (x0, y0, x1, y1) in slots:
+        slot = frame[y0:y1, x0:x1]
+        state, rect, info = classify_marker_in_slot(slot)
+        states.append(state)
+        rects.append(rect)
+        infos.append(info)
+
+    return slots, states, rects, infos
+
+
+def apply_heading_capture(local_grid, heading, states):
+    positions = HEADING_TO_POSITIONS[heading]
+    for pos, state in zip(positions, states):
+        if pos == (0, 0):
+            continue
+        local_grid[pos] = state
 
 
 def main():
@@ -274,9 +341,15 @@ def main():
         print("ERROR: Could not open camera.")
         return
 
-    print("Press q to quit.")
+    current_heading_idx = 0
+    local_grid = blank_local_grid()
 
-    last_print = 0.0
+    print("Lightweight object detection in program style")
+    print("Controls:")
+    print("  c = capture current heading")
+    print("  r = reset scan")
+    print("  q = quit")
+    print("Heading order:", HEADINGS)
 
     while True:
         ok, frame = cap.read()
@@ -284,55 +357,62 @@ def main():
             print("WARNING: Failed to read frame.")
             break
 
-        h, w = frame.shape[:2]
         view = frame.copy()
+        h, w = view.shape[:2]
 
-        slots = make_slot_boxes(w, h)
-        states = []
+        current_heading = HEADINGS[current_heading_idx]
+        slots, states, rects, infos = detect_three_slots(frame)
 
-        for i, (x0, y0, x1, y1) in enumerate(slots):
-            slot = frame[y0:y1, x0:x1]
-
-            state, rect, info = classify_marker_in_slot(slot)
-            states.append(state)
-
-            # slot outline
+        # draw slot overlays
+        for i, ((x0, y0, x1, y1), state, rect, info) in enumerate(zip(slots, states, rects, infos)):
             cv2.rectangle(view, (x0, y0), (x1, y1), (255, 255, 0), 2)
-
-            if state == TARGET:
-                color = (0, 255, 0)
-            elif state == OBSTACLE:
-                color = (0, 0, 255)
-            else:
-                color = (180, 180, 180)
-
-            draw_text(view, f"slot {i}: {state}", x0 + 5, y0 + 20, color)
+            draw_text(view, f"slot {i}: {state}", x0 + 5, y0 + 20, color_for_state(state))
 
             if rect is not None and state != EMPTY:
                 rx, ry, rw, rh = rect
-                cv2.rectangle(view, (x0 + rx, y0 + ry), (x0 + rx + rw, y0 + ry + rh), color, 2)
+                cv2.rectangle(view, (x0 + rx, y0 + ry), (x0 + rx + rw, y0 + ry + rh), color_for_state(state), 2)
 
                 if SHOW_DEBUG:
-                    dbg1 = f"B:{info.get('black_combined', 0):.2f}"
-                    dbg2 = f"R:{info.get('red_combined', 0):.2f}"
-                    draw_text(view, dbg1, x0 + 5, y1 - 28, color)
-                    draw_text(view, dbg2, x0 + 5, y1 - 8, color)
+                    b = infos[i].get("black_combined", 0.0)
+                    r = infos[i].get("red_combined", 0.0)
+                    draw_text(view, f"B:{b:.2f}", x0 + 5, y1 - 28, color_for_state(state), scale=0.45, thick=1)
+                    draw_text(view, f"R:{r:.2f}", x0 + 5, y1 - 10, color_for_state(state), scale=0.45, thick=1)
 
-        state_row = [state_to_char(s) for s in states]
+        # top text
+        draw_text(view, f"Current heading: {current_heading}", 10, 25, (255, 255, 255))
+        draw_text(view, f"Live row: {','.join(state_to_char(s) for s in states)}", 250, 25, (255, 255, 255))
 
-        now = time.time()
-        if now - last_print > 0.8:
-            print("state_row =", state_row)
-            print("states    =", states)
-            last_print = now
+        # draw current local 3x3 panel
+        draw_grid_panel(view, local_grid, x0=10, y0=45, cell=42)
 
-        draw_text(view, f"row: {','.join(state_row)}", 10, 25, (255, 255, 255))
+        # instructions
+        draw_text(view, "c=capture  r=reset  q=quit", 10, h - 15, (255, 255, 255), scale=0.5, thick=1)
 
-        cv2.imshow("Lightweight Object Detector", view)
+        cv2.imshow("Object Detection - Program Style", view)
 
         key = cv2.waitKey(1) & 0xFF
+
         if key == ord('q'):
             break
+
+        elif key == ord('r'):
+            local_grid = blank_local_grid()
+            current_heading_idx = 0
+            print("\nReset scan.")
+
+        elif key == ord('c'):
+            heading = HEADINGS[current_heading_idx]
+            apply_heading_capture(local_grid, heading, states)
+
+            print(f"\nCaptured heading: {heading}")
+            print("live states:", states)
+            print_matrix(local_grid)
+
+            current_heading_idx += 1
+
+            if current_heading_idx >= len(HEADINGS):
+                current_heading_idx = 0
+                print("\nScan complete. Starting heading order again from front.")
 
     cap.release()
     cv2.destroyAllWindows()
