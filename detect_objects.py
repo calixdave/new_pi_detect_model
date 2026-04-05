@@ -7,7 +7,7 @@ SCAN_DIR = "scan_images"
 DEBUG_DIR = "debug_objects"
 HEADINGS = ["front", "right", "back", "left"]
 
-# Use same slot extraction style as detect_colors.py
+# Same slot logic style as your color script
 ROI_TOP_FRAC = 0.55
 ROI_BOT_FRAC = 0.95
 
@@ -21,24 +21,35 @@ HEADING_TO_POSITIONS = {
     "left":  [(-1, -1), (-1, 0), (-1, +1)],
 }
 
-# ---------- Detection thresholds ----------
-# Black obstacle
-BLACK_THRESH = 70
-BLACK_MIN_AREA_FRAC = 0.04
-BLACK_MAX_AREA_FRAC = 0.70
-BLACK_MIN_FILL = 0.55
-BLACK_MIN_SCORE = 0.18
+# -------------------------------------------------
+# ORANGE obstacle thresholds (HSV)
+# Tune later if needed
+# -------------------------------------------------
+ORANGE_H_MIN = 5
+ORANGE_H_MAX = 28
+ORANGE_S_MIN = 110
+ORANGE_V_MIN = 110
 
-# White target (white square with black border)
-WHITE_MIN_V = 165
-WHITE_MAX_S = 80
-WHITE_MIN_AREA_FRAC = 0.04
-WHITE_MAX_AREA_FRAC = 0.70
-WHITE_MIN_FILL = 0.45
-TARGET_MIN_SCORE = 0.22
+ORANGE_MIN_AREA_FRAC = 0.03
+ORANGE_MAX_AREA_FRAC = 0.75
+ORANGE_MIN_FILL = 0.45
+ORANGE_MIN_SCORE = 0.18
 
-# Final decision margins
-EMPTY_SCORE_MAX = 0.12
+# -------------------------------------------------
+# WHITE target with black border thresholds
+# -------------------------------------------------
+WHITE_MIN_V = 170
+WHITE_MAX_S = 85
+WHITE_MIN_AREA_FRAC = 0.03
+WHITE_MAX_AREA_FRAC = 0.75
+WHITE_MIN_FILL = 0.40
+TARGET_MIN_SCORE = 0.20
+
+# -------------------------------------------------
+# Final decision
+# -------------------------------------------------
+EMPTY_SCORE_MAX = 0.10
+
 
 def get_three_slot_rois(img):
     h, w = img.shape[:2]
@@ -71,12 +82,14 @@ def get_three_slot_rois(img):
 
     return slots
 
+
 def pretty_print_matrix(mat):
     for row in [1, 0, -1]:
         vals = []
         for col in [-1, 0, 1]:
             vals.append(mat.get((col, row), "?"))
         print(" ".join(vals))
+
 
 def contour_fill_ratio(cnt):
     area = cv2.contourArea(cnt)
@@ -88,6 +101,7 @@ def contour_fill_ratio(cnt):
         return 0.0
     return float(area) / rect_area
 
+
 def squareish_score(cnt):
     x, y, w, h = cv2.boundingRect(cnt)
     if h <= 0:
@@ -95,12 +109,20 @@ def squareish_score(cnt):
     aspect = float(w) / float(h)
     return max(0.0, 1.0 - abs(aspect - 1.0))
 
-def detect_black_obstacle(tile):
+
+def detect_orange_obstacle(tile):
     h, w = tile.shape[:2]
     tile_area = float(h * w)
 
-    gray = cv2.cvtColor(tile, cv2.COLOR_BGR2GRAY)
-    mask = (gray < BLACK_THRESH).astype(np.uint8) * 255
+    hsv = cv2.cvtColor(tile, cv2.COLOR_BGR2HSV)
+    H, S, V = cv2.split(hsv)
+
+    mask = (
+        (H >= ORANGE_H_MIN) &
+        (H <= ORANGE_H_MAX) &
+        (S >= ORANGE_S_MIN) &
+        (V >= ORANGE_V_MIN)
+    ).astype(np.uint8) * 255
 
     kernel = np.ones((3, 3), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
@@ -114,22 +136,29 @@ def detect_black_obstacle(tile):
     for cnt in contours:
         area = cv2.contourArea(cnt)
         area_frac = area / tile_area
-        if area_frac < BLACK_MIN_AREA_FRAC or area_frac > BLACK_MAX_AREA_FRAC:
+        if area_frac < ORANGE_MIN_AREA_FRAC or area_frac > ORANGE_MAX_AREA_FRAC:
             continue
 
         fill = contour_fill_ratio(cnt)
-        if fill < BLACK_MIN_FILL:
+        if fill < ORANGE_MIN_FILL:
             continue
 
         sq = squareish_score(cnt)
         x, y, ww, hh = cv2.boundingRect(cnt)
 
-        mean_darkness = 1.0 - (gray[y:y+hh, x:x+ww].mean() / 255.0)
+        roi_hsv = hsv[y:y+hh, x:x+ww]
+        if roi_hsv.size == 0:
+            continue
+
+        mean_sat = float(np.mean(roi_hsv[:, :, 1])) / 255.0
+        mean_val = float(np.mean(roi_hsv[:, :, 2])) / 255.0
+
         score = (
-            0.45 * area_frac +
-            0.30 * fill +
-            0.15 * sq +
-            0.10 * mean_darkness
+            0.35 * area_frac +
+            0.25 * fill +
+            0.20 * sq +
+            0.10 * mean_sat +
+            0.10 * mean_val
         )
 
         if score > best_score:
@@ -137,6 +166,7 @@ def detect_black_obstacle(tile):
             best_rect = (x, y, ww, hh)
 
     return best_score, best_rect, mask
+
 
 def detect_white_target(tile):
     h, w = tile.shape[:2]
@@ -174,11 +204,9 @@ def detect_white_target(tile):
         if ww < 12 or hh < 12:
             continue
 
-        # Outer border ring and inner center check
         border = max(2, int(min(ww, hh) * 0.12))
         x0, y0, x1, y1 = x, y, x + ww, y + hh
 
-        # Clamp
         x0 = max(0, x0)
         y0 = max(0, y0)
         x1 = min(w, x1)
@@ -194,17 +222,12 @@ def detect_white_target(tile):
         if rh <= 2 * border or rw <= 2 * border:
             continue
 
-        # Inner bright area
-        inner_gray = roi_gray[border:rh-border, border:rw-border]
         inner_hsv = roi_hsv[border:rh-border, border:rw-border]
-
         inner_white_ratio = float(
             np.mean((inner_hsv[:, :, 2] >= WHITE_MIN_V) & (inner_hsv[:, :, 1] <= WHITE_MAX_S))
         )
 
-        # Border darkness
-        ring_mask = np.zeros((rh, rw), dtype=np.uint8)
-        ring_mask[:, :] = 1
+        ring_mask = np.ones((rh, rw), dtype=np.uint8)
         ring_mask[border:rh-border, border:rw-border] = 0
         border_pixels = roi_gray[ring_mask == 1]
         if border_pixels.size == 0:
@@ -226,30 +249,31 @@ def detect_white_target(tile):
 
     return best_score, best_rect, white_mask
 
+
 def classify_slot_object(tile):
-    black_score, black_rect, black_mask = detect_black_obstacle(tile)
+    orange_score, orange_rect, orange_mask = detect_orange_obstacle(tile)
     target_score, target_rect, white_mask = detect_white_target(tile)
 
-    # Decision logic
-    if target_score >= TARGET_MIN_SCORE and target_score >= black_score + 0.03:
-        return "target", target_score, "T", target_rect, black_rect, black_mask, white_mask
+    if target_score >= TARGET_MIN_SCORE and target_score >= orange_score + 0.03:
+        return "target", target_score, "T", target_rect, orange_rect, orange_mask, white_mask
 
-    if black_score >= BLACK_MIN_SCORE and black_score > target_score:
-        return "obstacle", black_score, "X", target_rect, black_rect, black_mask, white_mask
+    if orange_score >= ORANGE_MIN_SCORE and orange_score > target_score:
+        return "obstacle", orange_score, "X", target_rect, orange_rect, orange_mask, white_mask
 
-    if max(target_score, black_score) <= EMPTY_SCORE_MAX:
-        return "empty", max(target_score, black_score), "E", target_rect, black_rect, black_mask, white_mask
+    if max(target_score, orange_score) <= EMPTY_SCORE_MAX:
+        return "empty", max(target_score, orange_score), "E", target_rect, orange_rect, orange_mask, white_mask
 
-    return "unknown", max(target_score, black_score), "?", target_rect, black_rect, black_mask, white_mask
+    return "unknown", max(target_score, orange_score), "?", target_rect, orange_rect, orange_mask, white_mask
 
-def draw_debug(tile, label, score, target_rect, black_rect):
+
+def draw_debug(tile, label, score, target_rect, orange_rect):
     dbg = tile.copy()
 
-    if black_rect is not None:
-        x, y, w, h = black_rect
-        cv2.rectangle(dbg, (x, y), (x+w, y+h), (0, 0, 255), 2)
+    if orange_rect is not None:
+        x, y, w, h = orange_rect
+        cv2.rectangle(dbg, (x, y), (x+w, y+h), (0, 140, 255), 2)
         cv2.putText(dbg, "obs", (x, max(15, y-5)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 140, 255), 2)
 
     if target_rect is not None:
         x, y, w, h = target_rect
@@ -261,6 +285,7 @@ def draw_debug(tile, label, score, target_rect, black_rect):
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
 
     return dbg
+
 
 def main():
     os.makedirs(DEBUG_DIR, exist_ok=True)
@@ -300,16 +325,16 @@ def main():
         print(f"\nHeading: {heading}")
 
         for i, tile in enumerate(slots):
-            label, score, ch, target_rect, black_rect, black_mask, white_mask = classify_slot_object(tile)
+            label, score, ch, target_rect, orange_rect, orange_mask, white_mask = classify_slot_object(tile)
             pos = HEADING_TO_POSITIONS[heading][i]
             final_grid[pos] = ch
 
-            dbg = draw_debug(tile, label, score, target_rect, black_rect)
+            dbg = draw_debug(tile, label, score, target_rect, orange_rect)
 
             dbg_name = os.path.join(DEBUG_DIR, f"{heading}_slot{i}.jpg")
             cv2.imwrite(dbg_name, dbg)
 
-            cv2.imwrite(os.path.join(DEBUG_DIR, f"{heading}_slot{i}_blackmask.jpg"), black_mask)
+            cv2.imwrite(os.path.join(DEBUG_DIR, f"{heading}_slot{i}_orangemask.jpg"), orange_mask)
             cv2.imwrite(os.path.join(DEBUG_DIR, f"{heading}_slot{i}_whitemask.jpg"), white_mask)
 
             print(f"  slot {i}: label={label}, score={score:.4f}, char={ch}, saved={dbg_name}")
@@ -344,6 +369,7 @@ def main():
     print("\nSaved: object_results.json")
     print(f"Saved debug images in: {DEBUG_DIR}")
     print("Done.")
+
 
 if __name__ == "__main__":
     main()
