@@ -161,35 +161,80 @@ def build_matrix_from_headings(voted_by_heading):
 # --------------------------------------------------
 
 def main():
-    ensure_dir(SAVE_DIR)
+    model, classes = load_color_model(MODEL_PATH)
 
-    color_voted = process_one_type("color", unknown="?")
-    object_voted = process_one_type("object", unknown="?")
+    final_color = empty_3x3("?")
+    final_object = empty_3x3("?")
 
-    color_mat = build_matrix_from_headings(color_voted)
-    object_mat = build_matrix_from_headings(object_voted)
+    print("\n===== PER-HEADING VOTING =====\n")
 
-    color_mat_path = os.path.join(SAVE_DIR, "voted_color_3x3.txt")
-    object_mat_path = os.path.join(SAVE_DIR, "voted_object_3x3.txt")
+    for heading in HEADINGS:
+        files = find_heading_images(SCAN_DIR, heading)
 
-    with open(color_mat_path, "w") as f:
-        f.write(pretty_matrix(color_mat) + "\n")
+        if not files:
+            print(f"{heading.upper()}: no images found")
+            continue
 
-    with open(object_mat_path, "w") as f:
-        f.write(pretty_matrix(object_mat) + "\n")
+        color_results = []
+        object_results = []
 
-    print("\n==============================")
-    print("FINAL VOTED COLOR 3x3")
-    print(pretty_matrix(color_mat))
+        print(f"{heading.upper()} files:")
+        for f in files:
+            print("  ", f)
 
-    print("\nFINAL VOTED OBJECT 3x3")
-    print(pretty_matrix(object_mat))
-    print("==============================")
+        for i, path in enumerate(files):
+            img = cv2.imread(path)
+            if img is None:
+                print(f"Could not read: {path}")
+                continue
 
-    print("\nSaved files:")
-    print(" ", color_mat_path)
-    print(" ", object_mat_path)
+            debug_prefix = f"{heading}_{i}"
 
+            colors = detect_color_slots(img, model, classes, debug_prefix=debug_prefix)
+            objects = detect_object_slots(img, debug_prefix=debug_prefix)
 
-if __name__ == "__main__":
+            color_results.append(colors)
+            object_results.append(objects)
+
+            color_chars = [x[0] for x in colors]
+
+            print(f"\n{heading} image {i+1}:")
+            print("  color :", color_chars)
+            print("  object:", objects)
+
+        if not color_results:
+            continue
+
+        voted_colors = vote_color_results(color_results)
+        voted_objects = vote_object_results(object_results)
+
+        print(f"\nVOTED {heading}:")
+        print("  color :", voted_colors)
+        print("  object:", voted_objects)
+        print()
+
+        place_heading_into_matrix(final_color, heading, voted_colors)
+        place_heading_into_matrix(final_object, heading, voted_objects)
+
+    print("\n===== FINAL VOTED LOCAL 3x3 =====\n")
+    print("COLOR MATRIX:")
+    print(pretty_matrix(final_color))
+
+    print("\nOBJECT MATRIX:")
+    print(pretty_matrix(final_object))
+
+    os.makedirs(SAVE_DIR, exist_ok=True)
+
+    color_save_path = os.path.join(SAVE_DIR, "voted_color_3x3.txt")
+    object_save_path = os.path.join(SAVE_DIR, "voted_object_3x3.txt")
+
+    with open(color_save_path, "w") as f:
+        f.write(pretty_matrix(final_color) + "\n")
+
+    with open(object_save_path, "w") as f:
+        f.write(pretty_matrix(final_object) + "\n")
+
+    print("\nSaved:")
+    print(" ", color_save_path)
+    print(" ", object_save_path)
     main()
