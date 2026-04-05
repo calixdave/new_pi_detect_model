@@ -4,9 +4,10 @@ import os
 # CONFIG
 # =========================================================
 
-VOTED_COLOR_FILE = "voted_results/voted_color_3x3.txt"
+COLOR_FILE = "results/local_color_3x3.txt"
+RESULTS_DIR = "results"
+MAP_RESULT_FILE = os.path.join(RESULTS_DIR, "map_result.txt")
 
-# Your 10x10 color grid
 BIG_GRID = [
     ['B','Y','R','G','B','Y','Y','M','P','Y'],
     ['B','R','R','Y','P','B','R','R','M','M'],
@@ -20,10 +21,7 @@ BIG_GRID = [
     ['B','G','Y','M','R','P','G','B','Y','M'],
 ]
 
-# minimum known neighbors required to accept a match
 MIN_KNOWN_NEIGHBORS = 5
-
-# allow up to this many mismatches among known cells
 MAX_MISMATCHES = 1
 
 
@@ -57,7 +55,6 @@ def pretty_matrix(mat):
 
 
 def rotate_3x3_ccw(mat):
-    # 90 deg counterclockwise
     return [
         [mat[0][2], mat[1][2], mat[2][2]],
         [mat[0][1], mat[1][1], mat[2][1]],
@@ -89,10 +86,6 @@ def get_window_3x3(grid, center_r, center_c):
 
 
 def score_match(local_3x3, window_3x3):
-    """
-    Compare local against candidate window.
-    Ignore local '?' and local 'A'.
-    """
     known = 0
     matches = 0
     mismatches = 0
@@ -122,15 +115,6 @@ def score_match(local_3x3, window_3x3):
 
 
 def rotation_to_facing(rotation_ccw_deg):
-    """
-    rotation needed to align local scan with BIG_GRID.
-
-    If local had to be rotated CCW by:
-      0   -> facing UP
-      90  -> facing RIGHT
-      180 -> facing DOWN
-      270 -> facing LEFT
-    """
     mapping = {
         0: "UP",
         90: "RIGHT",
@@ -197,19 +181,29 @@ def find_best_match(local_3x3, big_grid):
 # =========================================================
 
 def main():
-    local_3x3 = read_local_3x3(VOTED_COLOR_FILE)
+    os.makedirs(RESULTS_DIR, exist_ok=True)
 
-    print("\nLOCAL VOTED COLOR 3x3:")
+    local_3x3 = read_local_3x3(COLOR_FILE)
+
+    print("\nLOCAL COLOR 3x3:")
     print(pretty_matrix(local_3x3))
 
     best, candidates = find_best_match(local_3x3, BIG_GRID)
 
     if best is None:
-        print("\nNo valid match found.")
-        print("Try:")
-        print("- lowering MIN_KNOWN_NEIGHBORS")
-        print("- increasing MAX_MISMATCHES")
-        print("- improving voting/color detection")
+        msg = (
+            "No valid match found.\n"
+            "Try:\n"
+            "- lowering MIN_KNOWN_NEIGHBORS\n"
+            "- increasing MAX_MISMATCHES\n"
+            "- improving color detection\n"
+        )
+        print("\n" + msg)
+
+        with open(MAP_RESULT_FILE, "w") as f:
+            f.write(msg)
+
+        print(f"Saved: {MAP_RESULT_FILE}")
         return
 
     print("\nBEST MATCH FOUND")
@@ -230,6 +224,7 @@ def main():
     print(pretty_matrix(best["window"]))
 
     print(f"\nTotal valid candidates: {len(candidates)}")
+
     if len(candidates) > 1:
         print("\nTop candidates:")
         for i, c in enumerate(candidates[:5], start=1):
@@ -240,6 +235,44 @@ def main():
                 f"score={c['score']}/{c['known']}, "
                 f"mismatches={c['mismatches']}"
             )
+
+    result_lines = [
+        "BEST MATCH FOUND",
+        "-------------------------",
+        f"center_row         = {best['center_row']}",
+        f"center_col         = {best['center_col']}",
+        f"rotation_ccw_deg   = {best['rotation_ccw_deg']}",
+        f"facing_in_big_grid = {best['facing']}",
+        f"known_neighbors    = {best['known']}",
+        f"matches            = {best['matches']}",
+        f"mismatches         = {best['mismatches']}",
+        f"score              = {best['score']}/{best['known']}",
+        "",
+        "ROTATED LOCAL 3x3 USED FOR MATCH:",
+        pretty_matrix(best["rotated_local"]),
+        "",
+        "MATCHED WINDOW IN BIG_GRID:",
+        pretty_matrix(best["window"]),
+        "",
+        f"Total valid candidates: {len(candidates)}"
+    ]
+
+    if len(candidates) > 1:
+        result_lines.append("")
+        result_lines.append("Top candidates:")
+        for i, c in enumerate(candidates[:5], start=1):
+            result_lines.append(
+                f"{i}. center=({c['center_row']},{c['center_col']}), "
+                f"rot={c['rotation_ccw_deg']} deg, "
+                f"facing={c['facing']}, "
+                f"score={c['score']}/{c['known']}, "
+                f"mismatches={c['mismatches']}"
+            )
+
+    with open(MAP_RESULT_FILE, "w") as f:
+        f.write("\n".join(result_lines) + "\n")
+
+    print(f"\nSaved: {MAP_RESULT_FILE}")
 
 
 if __name__ == "__main__":
