@@ -262,6 +262,26 @@ def classify_slot_object(tile):
 
     return "unknown", orange_score, "?", target_rect, orange_rect, orange_mask, white_mask
 
+def draw_debug(tile, label, score, target_rect, orange_rect):
+    dbg = tile.copy()
+
+    if orange_rect is not None:
+        x, y, w, h = orange_rect
+        cv2.rectangle(dbg, (x, y), (x + w, y + h), (0, 140, 255), 2)
+        cv2.putText(dbg, "obs", (x, max(15, y - 5)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 140, 255), 2)
+
+    if target_rect is not None:
+        x, y, w, h = target_rect
+        cv2.rectangle(dbg, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        cv2.putText(dbg, "target", (x, max(15, y - 5)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+    cv2.putText(dbg, f"{label} {score:.3f}", (10, 20),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+
+    return dbg
+
 
 def main():
     os.makedirs(DEBUG_DIR, exist_ok=True)
