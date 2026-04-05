@@ -25,15 +25,15 @@ HEADING_TO_POSITIONS = {
 # ORANGE obstacle thresholds (HSV)
 # Tune later if needed
 # -------------------------------------------------
-ORANGE_H_MIN = 5
-ORANGE_H_MAX = 28
-ORANGE_S_MIN = 110
-ORANGE_V_MIN = 110
+ORANGE_H_MIN = 3
+ORANGE_H_MAX = 30
+ORANGE_S_MIN = 90
+ORANGE_V_MIN = 90
 
-ORANGE_MIN_AREA_FRAC = 0.03
+ORANGE_MIN_AREA_FRAC = 0.02
 ORANGE_MAX_AREA_FRAC = 0.75
-ORANGE_MIN_FILL = 0.45
-ORANGE_MIN_SCORE = 0.18
+ORANGE_MIN_FILL = 0.35
+ORANGE_MIN_SCORE = 0.10
 
 # -------------------------------------------------
 # WHITE target with black border thresholds
@@ -254,37 +254,13 @@ def classify_slot_object(tile):
     orange_score, orange_rect, orange_mask = detect_orange_obstacle(tile)
     target_score, target_rect, white_mask = detect_white_target(tile)
 
-    if target_score >= TARGET_MIN_SCORE and target_score >= orange_score + 0.03:
-        return "target", target_score, "T", target_rect, orange_rect, orange_mask, white_mask
-
-    if orange_score >= ORANGE_MIN_SCORE and orange_score > target_score:
+    if orange_score >= ORANGE_MIN_SCORE:
         return "obstacle", orange_score, "X", target_rect, orange_rect, orange_mask, white_mask
 
-    if max(target_score, orange_score) <= EMPTY_SCORE_MAX:
-        return "empty", max(target_score, orange_score), "E", target_rect, orange_rect, orange_mask, white_mask
+    if orange_score <= EMPTY_SCORE_MAX:
+        return "empty", orange_score, "E", target_rect, orange_rect, orange_mask, white_mask
 
-    return "unknown", max(target_score, orange_score), "?", target_rect, orange_rect, orange_mask, white_mask
-
-
-def draw_debug(tile, label, score, target_rect, orange_rect):
-    dbg = tile.copy()
-
-    if orange_rect is not None:
-        x, y, w, h = orange_rect
-        cv2.rectangle(dbg, (x, y), (x+w, y+h), (0, 140, 255), 2)
-        cv2.putText(dbg, "obs", (x, max(15, y-5)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 140, 255), 2)
-
-    if target_rect is not None:
-        x, y, w, h = target_rect
-        cv2.rectangle(dbg, (x, y), (x+w, y+h), (0, 255, 0), 2)
-        cv2.putText(dbg, "target", (x, max(15, y-5)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-
-    cv2.putText(dbg, f"{label} {score:.3f}", (10, 20),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
-
-    return dbg
+    return "unknown", orange_score, "?", target_rect, orange_rect, orange_mask, white_mask
 
 
 def main():
