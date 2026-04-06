@@ -318,7 +318,7 @@ def main():
     )
 
     compact_17char = build_compact_17char(
-        local_color_3x3,
+        best["window"],
         local_object_3x3,
         camera_direction_after_scan
     )
@@ -335,6 +335,8 @@ def main():
     print(f"final_local_heading_after_scan = {final_local_heading_after_scan}")
     print(f"camera_direction_after_scan    = {camera_direction_after_scan}")
     print(f"compact_17char                 = {compact_17char}")
+    print("\nMATCHED WINDOW USED FOR COMPACT COLOR:")
+    print(pretty_matrix(best["window"]))
     print(f"known_neighbors                = {best['known']}")
     print(f"matches                        = {best['matches']}")
     print(f"mismatches                     = {best['mismatches']}")
