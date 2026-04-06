@@ -4,7 +4,7 @@ import cv2
 import joblib
 import numpy as np
 
-MODEL_PATH = "tile_color_model.joblib"
+MODEL_PATH = "tile_color_model_pi.joblib"
 SCAN_DIR = "scan_images"
 DEBUG_DIR = "debug_tiles"
 RESULTS_DIR = "results"
