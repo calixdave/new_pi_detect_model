@@ -101,14 +101,14 @@ def cleanup_previous_run():
         COMPACT_RESULT_FILE,
     ]
 
-    print("\nCleaning previous run files... - grid_program_pi_runtime_still_capture_markerfix.py:104")
+    print("\nCleaning previous run files...")
     for path in files_to_delete:
         if os.path.exists(path):
             try:
                 os.remove(path)
-                print(f"Deleted: {path} - grid_program_pi_runtime_still_capture_markerfix.py:109")
+                print(f"Deleted: {path}")
             except Exception as e:
-                print(f"WARNING: Could not delete {path}: {e} - grid_program_pi_runtime_still_capture_markerfix.py:111")
+                print(f"WARNING: Could not delete {path}: {e}")
 
 # =========================================================
 # SHARED HELPERS
@@ -146,7 +146,7 @@ def pretty_matrix(mat):
 
 
 def pretty_print_grid(final_grid, title):
-    print(f"\n{title} - grid_program_pi_runtime_still_capture_markerfix.py:149")
+    print(f"\n{title}")
     rows = matrix_rows_from_grid(final_grid)
     for row in rows:
         print(" ".join(row))
@@ -163,14 +163,14 @@ def capture_scan():
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
     if not cap.isOpened():
-        print("ERROR: Could not open camera. - grid_program_pi_runtime_still_capture_markerfix.py:166")
+        print("ERROR: Could not open camera.")
         return False
 
-    print("Camera opened. - grid_program_pi_runtime_still_capture_markerfix.py:169")
-    print("Instructions: - grid_program_pi_runtime_still_capture_markerfix.py:170")
-    print("Press 'c' to capture current heading - grid_program_pi_runtime_still_capture_markerfix.py:171")
-    print("Capture order: front > right > back > left - grid_program_pi_runtime_still_capture_markerfix.py:172")
-    print("After the 4th capture, the program will continue automatically. - grid_program_pi_runtime_still_capture_markerfix.py:173")
+    print("Camera opened.")
+    print("Instructions:")
+    print("  Press 'c' to capture current heading")
+    print("Capture order: front -> right -> back -> left")
+    print("After the 4th capture, the program will continue automatically.")
 
     idx = 0
     last_capture_msg = ""
@@ -178,7 +178,7 @@ def capture_scan():
     while True:
         ret, frame = cap.read()
         if not ret or frame is None:
-            print("ERROR: Failed to read frame from camera. - grid_program_pi_runtime_still_capture_markerfix.py:181")
+            print("ERROR: Failed to read frame from camera.")
             cap.release()
             cv2.destroyAllWindows()
             return False
@@ -217,18 +217,18 @@ def capture_scan():
 
             ok = cv2.imwrite(filename, frame)
             if ok:
-                print(f"Saved: {filename} - grid_program_pi_runtime_still_capture_markerfix.py:220")
+                print(f"Saved: {filename}")
                 last_capture_msg = f"Saved {heading}.jpg"
                 idx += 1
                 time.sleep(0.4)
 
                 if idx == len(HEADINGS):
-                    print("All 4 captures completed. Proceeding automatically... - grid_program_pi_runtime_still_capture_markerfix.py:226")
+                    print("All 4 captures completed. Proceeding automatically...")
                     cap.release()
                     cv2.destroyAllWindows()
                     return True
             else:
-                print(f"ERROR: Failed to save {filename} - grid_program_pi_runtime_still_capture_markerfix.py:231")
+                print(f"ERROR: Failed to save {filename}")
                 last_capture_msg = f"Failed to save {heading}.jpg"
 
 # =========================================================
@@ -239,7 +239,7 @@ def load_model_bundle(model_path):
     obj = joblib.load(model_path)
 
     if isinstance(obj, dict):
-        print("Joblib file contains a dict. Keys found: - grid_program_pi_runtime_still_capture_markerfix.py:242", list(obj.keys()))
+        print("Joblib file contains a dict. Keys found:", list(obj.keys()))
 
         if "model" not in obj:
             raise ValueError("Joblib dict does not contain key 'model'.")
@@ -249,14 +249,14 @@ def load_model_bundle(model_path):
 
         if class_names is not None:
             class_names = [str(x).lower() for x in class_names]
-            print("Loaded class names from joblib: - grid_program_pi_runtime_still_capture_markerfix.py:252", class_names)
+            print("Loaded class names from joblib:", class_names)
         else:
-            print("No explicit class names found in joblib. - grid_program_pi_runtime_still_capture_markerfix.py:254")
+            print("No explicit class names found in joblib.")
 
         return model, class_names
 
     if hasattr(obj, "predict") or hasattr(obj, "predict_proba"):
-        print("Loaded model directly from joblib file. - grid_program_pi_runtime_still_capture_markerfix.py:259")
+        print("Loaded model directly from joblib file.")
         return obj, None
 
     raise ValueError("No usable classifier found in joblib file.")
@@ -375,13 +375,13 @@ def get_three_slot_rois(img, roi_top_frac, roi_bot_frac, pad_x_frac, pad_y_frac)
 
 def detect_colors():
     if not os.path.exists(MODEL_PATH):
-        print(f"ERROR: Model file not found: {MODEL_PATH} - grid_program_pi_runtime_still_capture_markerfix.py:378")
+        print(f"ERROR: Model file not found: {MODEL_PATH}")
         return None
 
     try:
         model, class_names = load_model_bundle(MODEL_PATH)
     except Exception as e:
-        print("ERROR loading model: - grid_program_pi_runtime_still_capture_markerfix.py:384", e)
+        print("ERROR loading model:", e)
         return None
 
     final_grid = {
@@ -400,12 +400,12 @@ def detect_colors():
         path = os.path.join(SAVE_DIR, f"{heading}.jpg")
 
         if not os.path.exists(path):
-            print(f"ERROR: Missing image: {path} - grid_program_pi_runtime_still_capture_markerfix.py:403")
+            print(f"ERROR: Missing image: {path}")
             return None
 
         img = cv2.imread(path)
         if img is None:
-            print(f"ERROR: Could not read image: {path} - grid_program_pi_runtime_still_capture_markerfix.py:408")
+            print(f"ERROR: Could not read image: {path}")
             return None
 
         slots = get_three_slot_rois(
@@ -417,19 +417,19 @@ def detect_colors():
         )
 
         if len(slots) != 3:
-            print(f"ERROR: Could not build 3 slots for heading: {heading} - grid_program_pi_runtime_still_capture_markerfix.py:420")
+            print(f"ERROR: Could not build 3 slots for heading: {heading}")
             return None
 
-        print(f"\nHeading: {heading} - grid_program_pi_runtime_still_capture_markerfix.py:423")
+        print(f"\nHeading: {heading}")
         for i, tile in enumerate(slots):
             label, conf, ch, prob_map = classify_tile(model, class_names, tile)
             pos = HEADING_TO_POSITIONS[heading][i]
             final_grid[pos] = ch
 
-            print(f"slot {i}: label={label}, conf={conf:.4f}, char={ch} - grid_program_pi_runtime_still_capture_markerfix.py:429")
+            print(f"  slot {i}: label={label}, conf={conf:.4f}, char={ch}")
             if prob_map:
                 rounded_probs = {k: round(v, 4) for k, v in prob_map.items()}
-                print("probs: - grid_program_pi_runtime_still_capture_markerfix.py:432", rounded_probs)
+                print("    probs:", rounded_probs)
 
     pretty_print_grid(final_grid, "Final 3x3 color matrix:")
     return matrix_rows_from_grid(final_grid)
@@ -534,12 +534,12 @@ def detect_objects():
         path = os.path.join(SAVE_DIR, f"{heading}.jpg")
 
         if not os.path.exists(path):
-            print(f"ERROR: Missing image: {path} - grid_program_pi_runtime_still_capture_markerfix.py:537")
+            print(f"ERROR: Missing image: {path}")
             return None
 
         img = cv2.imread(path)
         if img is None:
-            print(f"ERROR: Could not read image: {path} - grid_program_pi_runtime_still_capture_markerfix.py:542")
+            print(f"ERROR: Could not read image: {path}")
             return None
 
         slots = get_three_slot_rois(
@@ -551,17 +551,17 @@ def detect_objects():
         )
 
         if len(slots) != 3:
-            print(f"ERROR: Could not build 3 slots for heading: {heading} - grid_program_pi_runtime_still_capture_markerfix.py:554")
+            print(f"ERROR: Could not build 3 slots for heading: {heading}")
             return None
 
-        print(f"\nHeading: {heading} - grid_program_pi_runtime_still_capture_markerfix.py:557")
+        print(f"\nHeading: {heading}")
         for i, tile in enumerate(slots):
             obj_char, metrics = detect_one_object_slot(tile)
             pos = HEADING_TO_POSITIONS[heading][i]
             final_grid[pos] = obj_char
 
-            print(f"slot {i}: object={obj_char} - grid_program_pi_runtime_still_capture_markerfix.py:563")
-            print(f"metrics: {metrics} - grid_program_pi_runtime_still_capture_markerfix.py:564")
+            print(f"  slot {i}: object={obj_char}")
+            print(f"    metrics: {metrics}")
 
     pretty_print_grid(final_grid, "Final 3x3 object matrix:")
     return matrix_rows_from_grid(final_grid)
@@ -763,11 +763,11 @@ def map_location(local_color_3x3, local_object_3x3):
     best, candidates = find_best_match(local_color_3x3, BIG_GRID)
 
     if best is None:
-        print("\nNo valid match found. - grid_program_pi_runtime_still_capture_markerfix.py:766")
-        print("Try: - grid_program_pi_runtime_still_capture_markerfix.py:767")
-        print("lowering MIN_KNOWN_NEIGHBORS - grid_program_pi_runtime_still_capture_markerfix.py:768")
-        print("increasing MAX_MISMATCHES - grid_program_pi_runtime_still_capture_markerfix.py:769")
-        print("improving color detection - grid_program_pi_runtime_still_capture_markerfix.py:770")
+        print("\nNo valid match found.")
+        print("Try:")
+        print("- lowering MIN_KNOWN_NEIGHBORS")
+        print("- increasing MAX_MISMATCHES")
+        print("- improving color detection")
         return None
 
     camera_direction_before_scan = best["facing"]
@@ -785,24 +785,24 @@ def map_location(local_color_3x3, local_object_3x3):
         camera_direction_after_scan
     )
 
-    print("\nBEST MATCH FOUND - grid_program_pi_runtime_still_capture_markerfix.py:788")
-    print("")
-    print(f"center_row                     = {best['center_row']} - grid_program_pi_runtime_still_capture_markerfix.py:790")
-    print(f"center_col                     = {best['center_col']} - grid_program_pi_runtime_still_capture_markerfix.py:791")
-    print(f"rotation_ccw_deg               = {best['rotation_ccw_deg']} - grid_program_pi_runtime_still_capture_markerfix.py:792")
-    print(f"facing_in_big_grid             = {best['facing']} - grid_program_pi_runtime_still_capture_markerfix.py:793")
-    print(f"camera_direction_before_scan   = {camera_direction_before_scan} - grid_program_pi_runtime_still_capture_markerfix.py:794")
-    print(f"scan_start_local               = {SCAN_START_LOCAL} - grid_program_pi_runtime_still_capture_markerfix.py:795")
-    print(f"scan_sweep                     = {SCAN_SWEEP} - grid_program_pi_runtime_still_capture_markerfix.py:796")
-    print(f"final_local_heading_after_scan = {final_local_heading_after_scan} - grid_program_pi_runtime_still_capture_markerfix.py:797")
-    print(f"camera_direction_after_scan    = {camera_direction_after_scan} - grid_program_pi_runtime_still_capture_markerfix.py:798")
-    print(f"compact_17char                 = {compact_17char} - grid_program_pi_runtime_still_capture_markerfix.py:799")
-    print("\nMATCHED WINDOW USED FOR COMPACT COLOR: - grid_program_pi_runtime_still_capture_markerfix.py:800")
-    print(pretty_matrix(best["window - grid_program_pi_runtime_still_capture_markerfix.py:801"]))
-    print(f"known_neighbors                = {best['known']} - grid_program_pi_runtime_still_capture_markerfix.py:802")
-    print(f"matches                        = {best['matches']} - grid_program_pi_runtime_still_capture_markerfix.py:803")
-    print(f"mismatches                     = {best['mismatches']} - grid_program_pi_runtime_still_capture_markerfix.py:804")
-    print(f"score                          = {best['score']}/{best['known']} - grid_program_pi_runtime_still_capture_markerfix.py:805")
+    print("\nBEST MATCH FOUND")
+    print("-------------------------")
+    print(f"center_row                     = {best['center_row']}")
+    print(f"center_col                     = {best['center_col']}")
+    print(f"rotation_ccw_deg               = {best['rotation_ccw_deg']}")
+    print(f"facing_in_big_grid             = {best['facing']}")
+    print(f"camera_direction_before_scan   = {camera_direction_before_scan}")
+    print(f"scan_start_local               = {SCAN_START_LOCAL}")
+    print(f"scan_sweep                     = {SCAN_SWEEP}")
+    print(f"final_local_heading_after_scan = {final_local_heading_after_scan}")
+    print(f"camera_direction_after_scan    = {camera_direction_after_scan}")
+    print(f"compact_17char                 = {compact_17char}")
+    print("\nMATCHED WINDOW USED FOR COMPACT COLOR:")
+    print(pretty_matrix(best["window"]))
+    print(f"known_neighbors                = {best['known']}")
+    print(f"matches                        = {best['matches']}")
+    print(f"mismatches                     = {best['mismatches']}")
+    print(f"score                          = {best['score']}/{best['known']}")
 
     return compact_17char
 
@@ -814,7 +814,7 @@ def save_compact_result(compact_17char):
     os.makedirs(RESULTS_DIR, exist_ok=True)
     with open(COMPACT_RESULT_FILE, "w") as f:
         f.write(compact_17char + "\n")
-    print(f"\nSaved final compact result: {COMPACT_RESULT_FILE} - grid_program_pi_runtime_still_capture_markerfix.py:817")
+    print(f"\nSaved final compact result: {COMPACT_RESULT_FILE}")
 
 # =========================================================
 # MAIN
@@ -823,47 +823,47 @@ def save_compact_result(compact_17char):
 def main():
     cleanup_previous_run()
 
-    print("\n - grid_program_pi_runtime_still_capture_markerfix.py:826" + "=" * 70)
-    print("STEP 1  SCANNING - grid_program_pi_runtime_still_capture_markerfix.py:827")
-    print("= - grid_program_pi_runtime_still_capture_markerfix.py:828" * 70)
+    print("\n" + "=" * 70)
+    print("STEP 1 - SCANNING")
+    print("=" * 70)
     ok = capture_scan()
     if not ok:
-        print("\nPipeline stopped at scan stage. - grid_program_pi_runtime_still_capture_markerfix.py:831")
+        print("\nPipeline stopped at scan stage.")
         return
 
-    print("\n - grid_program_pi_runtime_still_capture_markerfix.py:834" + "=" * 70)
-    print("STEP 2  COLOR DETECTION - grid_program_pi_runtime_still_capture_markerfix.py:835")
-    print("= - grid_program_pi_runtime_still_capture_markerfix.py:836" * 70)
+    print("\n" + "=" * 70)
+    print("STEP 2 - COLOR DETECTION")
+    print("=" * 70)
     local_color_3x3 = detect_colors()
     if local_color_3x3 is None:
-        print("\nPipeline stopped at color detection stage. - grid_program_pi_runtime_still_capture_markerfix.py:839")
+        print("\nPipeline stopped at color detection stage.")
         return
 
-    print("\n - grid_program_pi_runtime_still_capture_markerfix.py:842" + "=" * 70)
-    print("STEP 3  OBJECT DETECTION - grid_program_pi_runtime_still_capture_markerfix.py:843")
-    print("= - grid_program_pi_runtime_still_capture_markerfix.py:844" * 70)
+    print("\n" + "=" * 70)
+    print("STEP 3 - OBJECT DETECTION")
+    print("=" * 70)
     local_object_3x3 = detect_objects()
     if local_object_3x3 is None:
-        print("\nPipeline stopped at object detection stage. - grid_program_pi_runtime_still_capture_markerfix.py:847")
+        print("\nPipeline stopped at object detection stage.")
         return
 
-    print("\n - grid_program_pi_runtime_still_capture_markerfix.py:850" + "=" * 70)
-    print("STEP 4  LOCATION MAPPING - grid_program_pi_runtime_still_capture_markerfix.py:851")
-    print("= - grid_program_pi_runtime_still_capture_markerfix.py:852" * 70)
+    print("\n" + "=" * 70)
+    print("STEP 4 - LOCATION MAPPING")
+    print("=" * 70)
     compact_17char = map_location(local_color_3x3, local_object_3x3)
     if compact_17char is None:
-        print("\nPipeline stopped at mapping stage. - grid_program_pi_runtime_still_capture_markerfix.py:855")
+        print("\nPipeline stopped at mapping stage.")
         return
 
-    print("\n - grid_program_pi_runtime_still_capture_markerfix.py:858" + "=" * 70)
-    print("STEP 5  SAVE FINAL RESULT - grid_program_pi_runtime_still_capture_markerfix.py:859")
-    print("= - grid_program_pi_runtime_still_capture_markerfix.py:860" * 70)
+    print("\n" + "=" * 70)
+    print("STEP 5 - SAVE FINAL RESULT")
+    print("=" * 70)
     save_compact_result(compact_17char)
 
-    print("\n - grid_program_pi_runtime_still_capture_markerfix.py:863" + "=" * 70)
-    print("PIPELINE FINISHED - grid_program_pi_runtime_still_capture_markerfix.py:864")
-    print("= - grid_program_pi_runtime_still_capture_markerfix.py:865" * 70)
-    print(f"Final compact result: {compact_17char} - grid_program_pi_runtime_still_capture_markerfix.py:866")
+    print("\n" + "=" * 70)
+    print("PIPELINE FINISHED")
+    print("=" * 70)
+    print(f"Final compact result: {compact_17char}")
 
 
 if __name__ == "__main__":
