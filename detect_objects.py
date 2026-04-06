@@ -13,11 +13,36 @@ RESULTS_DIR = "results"
 
 HEADINGS = ["front", "right", "back", "left"]
 
-ROI_TOP_FRAC = 0.55
-ROI_BOT_FRAC = 0.95
+# ---------------------------------------------------------
+# Parameters copied from your live tuner baseline
+# ---------------------------------------------------------
+
+ROI_TOP_FRAC = 0.34
+ROI_BOT_FRAC = 0.94
 
 SLOT_PAD_X_FRAC = 0.03
 SLOT_PAD_Y_FRAC = 0.06
+
+WHITE_MIN = 126
+BLACK_MAX = 95
+RED_S_MIN = 95
+RED_V_MIN = 120
+
+WHITE_RATIO_TH = 0.417
+RED_RATIO_TH = 0.23
+BLACK_RATIO_TH = 0.18
+
+EMPTY_WHITE_TH = 0.895
+EMPTY_RED_TH = 0.9
+EMPTY_BLACK_TH = 1.0
+
+CANNY1 = 0
+CANNY2 = 0
+HOUGH_TH = 38
+MIN_LINE = 0
+MAX_GAP = 100
+
+BLUR_ODD = 1
 
 # Object meaning:
 # O = obstacle   (white box with thick red X)
@@ -80,43 +105,46 @@ def detect_one_object_slot(slot_bgr):
     hsv = cv2.cvtColor(slot_bgr, cv2.COLOR_BGR2HSV)
     gray = cv2.cvtColor(slot_bgr, cv2.COLOR_BGR2GRAY)
 
+    if BLUR_ODD > 1:
+        k = BLUR_ODD if BLUR_ODD % 2 == 1 else BLUR_ODD + 1
+        gray = cv2.GaussianBlur(gray, (k, k), 0)
+
     # -------------------------------
     # red X detection
     # -------------------------------
-    lower_red1 = np.array([0, 100, 80], dtype=np.uint8)
+    lower_red1 = np.array([0, RED_S_MIN, RED_V_MIN], dtype=np.uint8)
     upper_red1 = np.array([10, 255, 255], dtype=np.uint8)
-    lower_red2 = np.array([170, 100, 80], dtype=np.uint8)
+    lower_red2 = np.array([170, RED_S_MIN, RED_V_MIN], dtype=np.uint8)
     upper_red2 = np.array([180, 255, 255], dtype=np.uint8)
 
     red1 = cv2.inRange(hsv, lower_red1, upper_red1)
     red2 = cv2.inRange(hsv, lower_red2, upper_red2)
     red_mask = cv2.bitwise_or(red1, red2)
-
     red_ratio = float(np.count_nonzero(red_mask)) / red_mask.size
 
     # -------------------------------
     # white object area
     # -------------------------------
-    white_mask = cv2.inRange(gray, 180, 255)
+    white_mask = cv2.inRange(gray, WHITE_MIN, 255)
     white_ratio = float(np.count_nonzero(white_mask)) / white_mask.size
 
     # -------------------------------
     # black X detection
     # -------------------------------
-    black_mask = cv2.inRange(gray, 0, 60)
+    black_mask = cv2.inRange(gray, 0, BLACK_MAX)
     black_ratio = float(np.count_nonzero(black_mask)) / black_mask.size
 
     # -------------------------------
     # diagonal line detection
     # -------------------------------
-    edges = cv2.Canny(gray, 60, 160)
+    edges = cv2.Canny(gray, CANNY1, CANNY2)
     lines = cv2.HoughLinesP(
         edges,
         1,
         np.pi / 180,
-        threshold=25,
-        minLineLength=20,
-        maxLineGap=8
+        threshold=max(1, HOUGH_TH),
+        minLineLength=max(1, MIN_LINE),
+        maxLineGap=max(0, MAX_GAP)
     )
 
     diag_pos = 0
@@ -150,15 +178,15 @@ def detect_one_object_slot(slot_bgr):
     }
 
     # obstacle = white box + red X
-    if white_ratio > 0.18 and red_ratio > 0.03 and has_x_shape:
+    if white_ratio > WHITE_RATIO_TH and red_ratio > RED_RATIO_TH and has_x_shape:
         return "O", metrics
 
     # target = white box + black X
-    if white_ratio > 0.18 and black_ratio > 0.05 and has_x_shape:
+    if white_ratio > WHITE_RATIO_TH and black_ratio > BLACK_RATIO_TH and has_x_shape:
         return "T", metrics
 
     # empty
-    if white_ratio < 0.12 and red_ratio < 0.01 and black_ratio < 0.03:
+    if white_ratio < EMPTY_WHITE_TH and red_ratio < EMPTY_RED_TH and black_ratio < EMPTY_BLACK_TH:
         return "E", metrics
 
     return "?", metrics
