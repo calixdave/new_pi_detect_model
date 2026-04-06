@@ -6,7 +6,7 @@ import subprocess
 # CONFIG
 # =========================================================
 
-SCAN_SCRIPT = "scan_capture.py"      # change if your scan script has a different name
+SCAN_SCRIPT = "capture_scan.py"      # change if your scan script has a different name
 COLOR_SCRIPT = "detect_colors.py"
 OBJECT_SCRIPT = "detect_objects.py"
 MAP_SCRIPT = "map_location.py"
